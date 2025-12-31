@@ -100,31 +100,54 @@ class RAGSystem:
         
         return total_courses, total_chunks
     
-    def _extract_cited_sources(self, response: str, all_sources: list) -> list:
+    def _extract_cited_sources(self, response: str, all_sources: list) -> Tuple[str, list]:
         """
-        Extract only the sources that were actually cited in the response.
+        Extract only the sources that were actually cited in the response,
+        renumber them sequentially, and update the response text accordingly.
 
         Args:
             response: The AI-generated response text
             all_sources: List of all sources from search results
 
         Returns:
-            List of sources that were actually cited (with title and url)
+            Tuple of (updated response with renumbered citations, list of renumbered sources)
         """
         if not all_sources:
-            return []
+            return response, []
 
         # Find all citation numbers like [1], [2], [3] in the response
-        cited_nums = set(int(m) for m in re.findall(r'\[(\d+)\]', response))
+        cited_nums = sorted(set(int(m) for m in re.findall(r'\[(\d+)\]', response)))
 
-        # Filter sources to only include cited ones, preserving citation numbers
-        cited_sources = [
-            {"citation_num": s["citation_num"], "title": s["title"], "url": s["url"]}
-            for s in all_sources
-            if s.get("citation_num") in cited_nums
-        ]
+        if not cited_nums:
+            return response, []
 
-        return cited_sources
+        # Create mapping from old citation numbers to new sequential numbers
+        old_to_new = {old_num: new_num for new_num, old_num in enumerate(cited_nums, start=1)}
+
+        # Update citation numbers in the response text
+        updated_response = response
+        for old_num, new_num in old_to_new.items():
+            # Replace [old_num] with a temporary placeholder to avoid conflicts
+            updated_response = re.sub(rf'\[{old_num}\]', f'[[CITE_{new_num}]]', updated_response)
+
+        # Replace placeholders with final citation numbers
+        updated_response = re.sub(r'\[\[CITE_(\d+)\]\]', r'[\1]', updated_response)
+
+        # Build renumbered sources list
+        cited_sources = []
+        for source in all_sources:
+            old_num = source.get("citation_num")
+            if old_num in old_to_new:
+                cited_sources.append({
+                    "citation_num": old_to_new[old_num],
+                    "title": source["title"],
+                    "url": source["url"]
+                })
+
+        # Sort by new citation number
+        cited_sources.sort(key=lambda x: x["citation_num"])
+
+        return updated_response, cited_sources
 
     def query(self, query: str, session_id: Optional[str] = None) -> Tuple[str, List[str]]:
         """
@@ -159,14 +182,14 @@ class RAGSystem:
         # Reset sources after retrieving them
         self.tool_manager.reset_sources()
 
-        # Filter to only include sources that were actually cited in the response
-        cited_sources = self._extract_cited_sources(response, all_sources)
+        # Filter to only cited sources and renumber them sequentially
+        response, cited_sources = self._extract_cited_sources(response, all_sources)
 
         # Update conversation history
         if session_id:
             self.session_manager.add_exchange(session_id, query, response)
 
-        # Return response with only cited sources
+        # Return response with renumbered citations and sources
         return response, cited_sources
     
     def get_course_analytics(self) -> Dict:
