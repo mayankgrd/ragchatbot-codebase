@@ -122,10 +122,18 @@ function addMessage(content, type, sources = null, isWelcome = false) {
     let html = `<div class="message-content">${displayContent}</div>`;
     
     if (sources && sources.length > 0) {
+        const sourceItems = sources.map(source => {
+            const citationNum = source.citation_num ? `[${source.citation_num}] ` : '';
+            if (source.url) {
+                return `<div class="source-item">${citationNum}<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source.title)}</a></div>`;
+            }
+            return `<div class="source-item">${citationNum}${escapeHtml(source.title)}</div>`;
+        }).join('');
+
         html += `
             <details class="sources-collapsible">
                 <summary class="sources-header">Sources</summary>
-                <div class="sources-content">${sources.join(', ')}</div>
+                <div class="sources-content">${sourceItems}</div>
             </details>
         `;
     }

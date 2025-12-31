@@ -1,5 +1,6 @@
 from typing import List, Tuple, Optional, Dict
 import os
+import re
 from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from ai_generator import AIGenerator
@@ -99,25 +100,51 @@ class RAGSystem:
         
         return total_courses, total_chunks
     
+    def _extract_cited_sources(self, response: str, all_sources: list) -> list:
+        """
+        Extract only the sources that were actually cited in the response.
+
+        Args:
+            response: The AI-generated response text
+            all_sources: List of all sources from search results
+
+        Returns:
+            List of sources that were actually cited (with title and url)
+        """
+        if not all_sources:
+            return []
+
+        # Find all citation numbers like [1], [2], [3] in the response
+        cited_nums = set(int(m) for m in re.findall(r'\[(\d+)\]', response))
+
+        # Filter sources to only include cited ones, preserving citation numbers
+        cited_sources = [
+            {"citation_num": s["citation_num"], "title": s["title"], "url": s["url"]}
+            for s in all_sources
+            if s.get("citation_num") in cited_nums
+        ]
+
+        return cited_sources
+
     def query(self, query: str, session_id: Optional[str] = None) -> Tuple[str, List[str]]:
         """
         Process a user query using the RAG system with tool-based search.
-        
+
         Args:
             query: User's question
             session_id: Optional session ID for conversation context
-            
+
         Returns:
-            Tuple of (response, sources list - empty for tool-based approach)
+            Tuple of (response, sources list - only includes actually cited sources)
         """
         # Create prompt for the AI with clear instructions
         prompt = f"""Answer this question about course materials: {query}"""
-        
+
         # Get conversation history if session exists
         history = None
         if session_id:
             history = self.session_manager.get_conversation_history(session_id)
-        
+
         # Generate response using AI with tools
         response = self.ai_generator.generate_response(
             query=prompt,
@@ -125,19 +152,22 @@ class RAGSystem:
             tools=self.tool_manager.get_tool_definitions(),
             tool_manager=self.tool_manager
         )
-        
-        # Get sources from the search tool
-        sources = self.tool_manager.get_last_sources()
+
+        # Get all sources from the search tool
+        all_sources = self.tool_manager.get_last_sources()
 
         # Reset sources after retrieving them
         self.tool_manager.reset_sources()
-        
+
+        # Filter to only include sources that were actually cited in the response
+        cited_sources = self._extract_cited_sources(response, all_sources)
+
         # Update conversation history
         if session_id:
             self.session_manager.add_exchange(session_id, query, response)
-        
-        # Return response with sources from tool searches
-        return response, sources
+
+        # Return response with only cited sources
+        return response, cited_sources
     
     def get_course_analytics(self) -> Dict:
         """Get analytics about the course catalog"""

@@ -86,31 +86,38 @@ class CourseSearchTool(Tool):
         return self._format_results(results)
     
     def _format_results(self, results: SearchResults) -> str:
-        """Format search results with course and lesson context"""
+        """Format search results with numbered citations for AI to reference"""
         formatted = []
         sources = []  # Track sources for the UI
-        
-        for doc, meta in zip(results.documents, results.metadata):
+
+        for idx, (doc, meta) in enumerate(zip(results.documents, results.metadata), start=1):
             course_title = meta.get('course_title', 'unknown')
             lesson_num = meta.get('lesson_number')
-            
-            # Build context header
-            header = f"[{course_title}"
+
+            # Build source title
+            source_title = course_title
             if lesson_num is not None:
-                header += f" - Lesson {lesson_num}"
-            header += "]"
-            
-            # Track source for the UI
-            source = course_title
+                source_title += f" - Lesson {lesson_num}"
+
+            # Get lesson link from vector store
+            lesson_link = None
             if lesson_num is not None:
-                source += f" - Lesson {lesson_num}"
-            sources.append(source)
-            
+                lesson_link = self.store.get_lesson_link(course_title, lesson_num)
+
+            # Store with citation number for later filtering
+            sources.append({
+                "citation_num": idx,
+                "title": source_title,
+                "url": lesson_link
+            })
+
+            # Format with numbered reference for AI to cite
+            header = f"[{idx}] {source_title}"
             formatted.append(f"{header}\n{doc}")
-        
+
         # Store sources for retrieval
         self.last_sources = sources
-        
+
         return "\n\n".join(formatted)
 
 class ToolManager:
