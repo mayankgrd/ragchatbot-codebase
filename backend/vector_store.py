@@ -264,4 +264,39 @@ class VectorStore:
             return None
         except Exception as e:
             print(f"Error getting lesson link: {e}")
+
+    def course_exists(self, course_title: str) -> bool:
+        """Check if a course already exists in the vector store"""
+        try:
+            results = self.course_catalog.get(ids=[course_title])
+            return bool(results and results.get('ids'))
+        except Exception:
+            return False
+
+    def delete_course(self, course_title: str) -> bool:
+        """
+        Delete a course and all its content from the vector store.
+
+        Args:
+            course_title: The title of the course to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Delete from course_catalog
+            self.course_catalog.delete(ids=[course_title])
+
+            # Get all chunk IDs for this course from course_content
+            results = self.course_content.get(
+                where={"course_title": course_title}
+            )
+
+            if results and results.get('ids'):
+                self.course_content.delete(ids=results['ids'])
+
+            return True
+        except Exception as e:
+            print(f"Error deleting course: {e}")
+            return False
     

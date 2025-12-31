@@ -198,3 +198,69 @@ class RAGSystem:
             "total_courses": self.vector_store.get_course_count(),
             "course_titles": self.vector_store.get_existing_course_titles()
         }
+
+    def get_detailed_course_list(self) -> List[Dict]:
+        """Get detailed metadata for all courses"""
+        return self.vector_store.get_all_courses_metadata()
+
+    def add_course_from_text(self, content: str) -> Tuple[Optional[Course], int, str]:
+        """
+        Add a course from text content (for manual paste or scraper output).
+
+        Args:
+            content: Course script content in expected format
+
+        Returns:
+            Tuple of (Course object or None, chunk_count, error_message)
+        """
+        import tempfile
+
+        try:
+            # Write content to temp file (document_processor expects file path)
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+                f.write(content)
+                temp_path = f.name
+
+            try:
+                # Process using existing method
+                course, course_chunks = self.document_processor.process_course_document(temp_path)
+
+                if not course:
+                    return None, 0, "Failed to parse course content"
+
+                # Check if course already exists
+                if self.vector_store.course_exists(course.title):
+                    return None, 0, f"Course '{course.title}' already exists"
+
+                # Add to vector store
+                self.vector_store.add_course_metadata(course)
+                self.vector_store.add_course_content(course_chunks)
+
+                return course, len(course_chunks), ""
+            finally:
+                os.unlink(temp_path)
+
+        except Exception as e:
+            return None, 0, str(e)
+
+    def delete_course(self, course_title: str) -> Tuple[bool, str]:
+        """
+        Delete a course from the system.
+
+        Args:
+            course_title: Title of course to delete
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        try:
+            if not self.vector_store.course_exists(course_title):
+                return False, f"Course '{course_title}' not found"
+
+            success = self.vector_store.delete_course(course_title)
+            if success:
+                return True, ""
+            else:
+                return False, "Failed to delete course from vector store"
+        except Exception as e:
+            return False, str(e)

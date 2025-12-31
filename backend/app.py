@@ -11,9 +11,13 @@ import os
 
 from config import config
 from rag_system import RAGSystem
+from admin_routes import admin_router, set_rag_system
 
 # Initialize FastAPI app
 app = FastAPI(title="Course Materials RAG System", root_path="")
+
+# Include admin router
+app.include_router(admin_router)
 
 # Add trusted host middleware for proxy
 app.add_middleware(
@@ -33,6 +37,9 @@ app.add_middleware(
 
 # Initialize RAG system
 rag_system = RAGSystem(config)
+
+# Set RAG system reference for admin routes
+set_rag_system(rag_system)
 
 # Pydantic models for request/response
 class QueryRequest(BaseModel):
@@ -113,7 +120,14 @@ class DevStaticFiles(StaticFiles):
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         return response
-    
-    
+
+
+# Serve admin page
+@app.get("/admin")
+async def serve_admin():
+    """Serve the admin page"""
+    return FileResponse("../frontend/admin.html")
+
+
 # Serve static files for the frontend
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")

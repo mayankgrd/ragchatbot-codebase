@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Admin - RAG Chatbot</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Admin-specific styles */
+        .admin-container {
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            flex-direction: column;
+            background: var(--background);
+        }
+
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .admin-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+        }
+
+        .back-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--primary-color);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .back-link:hover {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .admin-main {
+            flex: 1;
+            display: flex;
+            gap: 2rem;
+            padding: 2rem;
+            overflow: hidden;
+        }
+
+        /* Course List Section */
+        .course-list-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+
+        .course-list-section h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .course-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .course-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .course-list::-webkit-scrollbar-track {
+            background: var(--surface);
+        }
+
+        .course-list::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .course-card {
+            background: var(--background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .course-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .course-header h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 0;
+            flex: 1;
+        }
+
+        .delete-btn {
+            background: transparent;
+            border: 1px solid #ef4444;
+            color: #ef4444;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+        }
+
+        .delete-btn:hover {
+            background: #ef4444;
+            color: white;
+        }
+
+        .course-meta {
+            display: flex;
+            gap: 1.5rem;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .course-card a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.85rem;
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+
+        .course-card a:hover {
+            text-decoration: underline;
+        }
+
+        .lesson-list {
+            margin-top: 0.75rem;
+        }
+
+        .lesson-list summary {
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+
+        .lesson-list summary:hover {
+            color: var(--text-primary);
+        }
+
+        .lesson-list ul {
+            margin-top: 0.5rem;
+            padding-left: 1.5rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .lesson-list li {
+            padding: 0.25rem 0;
+        }
+
+        .lesson-list li a {
+            margin-left: 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .no-courses {
+            color: var(--text-secondary);
+            font-style: italic;
+            text-align: center;
+            padding: 2rem;
+        }
+
+        /* Add Course Section */
+        .add-course-section {
+            width: 450px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+
+        .add-course-section h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* Tabs */
+        .tab-container {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background: var(--background);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .tab:hover {
+            border-color: var(--primary-color);
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+            flex-direction: column;
+            gap: 1rem;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .form-group label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .form-group input,
+        .form-group textarea {
+            padding: 0.75rem 1rem;
+            background: var(--background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px var(--focus-ring);
+        }
+
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .form-group textarea {
+            min-height: 200px;
+            resize: vertical;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .help-text {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .primary-btn {
+            padding: 0.875rem 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: auto;
+        }
+
+        .primary-btn:hover:not(:disabled) {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .primary-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal.hidden {
+            display: none;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 2rem;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+
+        #statusMessage {
+            font-size: 1rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+
+        #statusMessage.loading {
+            color: var(--text-secondary);
+        }
+
+        #statusMessage.success {
+            color: #4ade80;
+        }
+
+        #statusMessage.error {
+            color: #f87171;
+        }
+
+        .secondary-btn {
+            padding: 0.75rem 1.5rem;
+            background: var(--background);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .secondary-btn:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .secondary-btn.hidden {
+            display: none;
+        }
+
+        /* Loading spinner in modal */
+        .loading-spinner {
+            display: inline-flex;
+            gap: 6px;
+            margin-bottom: 1rem;
+        }
+
+        .loading-spinner span {
+            width: 10px;
+            height: 10px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading-spinner span:nth-child(1) { animation-delay: -0.32s; }
+        .loading-spinner span:nth-child(2) { animation-delay: -0.16s; }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .admin-main {
+                flex-direction: column;
+            }
+
+            .add-course-section {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Course Administration</h1>
+            <a href="/" class="back-link">Back to Chat</a>
+        </header>
+
+        <main class="admin-main">
+            <!-- Course List Section -->
+            <section class="course-list-section">
+                <h2>Indexed Courses</h2>
+                <div id="courseList" class="course-list">
+                    <p class="no-courses">Loading courses...</p>
+                </div>
+            </section>
+
+            <!-- Add Course Section -->
+            <section class="add-course-section">
+                <h2>Add New Course</h2>
+
+                <!-- Tabs -->
+                <div class="tab-container">
+                    <button class="tab active" data-tab="scrape">Scrape from URL</button>
+                    <button class="tab" data-tab="manual">Manual Paste</button>
+                </div>
+
+                <!-- Scrape Tab -->
+                <div id="scrapeTab" class="tab-content active">
+                    <div class="form-group">
+                        <label for="courseUrl">Course URL</label>
+                        <input type="url" id="courseUrl"
+                               placeholder="https://learn.deeplearning.ai/courses/...">
+                    </div>
+                    <div class="form-group">
+                        <label for="sessionCookie">Session Cookie</label>
+                        <input type="text" id="sessionCookie"
+                               placeholder="Your DLAI session cookie">
+                        <small class="help-text">
+                            Get this from browser DevTools: F12 &rarr; Application &rarr;
+                            Cookies &rarr; learn.deeplearning.ai &rarr; copy the session cookie value
+                        </small>
+                    </div>
+                    <button id="scrapeBtn" class="primary-btn">Scrape Course</button>
+                </div>
+
+                <!-- Manual Tab -->
+                <div id="manualTab" class="tab-content">
+                    <div class="form-group">
+                        <label for="courseContent">Course Script Content</label>
+                        <textarea id="courseContent" rows="15"
+                                  placeholder="Course Title: Your Course Name
+Course Link: https://...
+Course Instructor: Instructor Name
+
+Lesson 0: Introduction
+Lesson Link: https://...
+[transcript content]
+
+Lesson 1: Next Topic
+Lesson Link: https://...
+[transcript content]"></textarea>
+                    </div>
+                    <button id="uploadBtn" class="primary-btn">Upload Course</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Status Modal -->
+        <div id="statusModal" class="modal hidden">
+            <div class="modal-content">
+                <div id="loadingSpinner" class="loading-spinner hidden">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div id="statusMessage"></div>
+                <button id="closeModal" class="secondary-btn hidden">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
