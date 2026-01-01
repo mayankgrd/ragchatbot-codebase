@@ -70,14 +70,14 @@ class TestAIGenerator:
         assert call_args.kwargs["tools"] == tools
         assert call_args.kwargs["tool_choice"] == {"type": "auto"}
 
-    def test_generate_response_triggers_tool_execution(self, ai_generator, mock_anthropic_response_tool_use, mock_anthropic_response_text, mock_tool_manager):
+    def test_generate_response_triggers_tool_execution(self, ai_generator, mock_anthropic_response_tool_use, mock_anthropic_response_text_with_citations, mock_tool_manager):
         """Generate response should execute tools when model requests them"""
         generator, mock_client = ai_generator
 
-        # First call returns tool use, second call returns final response
+        # First call returns tool use, second call returns final response with citations
         mock_client.messages.create.side_effect = [
             mock_anthropic_response_tool_use,
-            mock_anthropic_response_text
+            mock_anthropic_response_text_with_citations
         ]
 
         tools = [{"name": "search_course_content", "description": "Search"}]
@@ -92,8 +92,8 @@ class TestAIGenerator:
             "search_course_content",
             query="MCP protocol"
         )
-        # Final response should be returned
-        assert result == "This is a test response."
+        # Final response should be returned (with citation)
+        assert result == "This is a test response with citations [1]."
 
     def test_base_params_set_correctly(self):
         """Base params should include model and settings"""
@@ -115,13 +115,13 @@ class TestSequentialToolCalling:
             generator = AIGenerator(api_key="test-key", model="test-model")
             return generator, mock_anthropic.return_value
 
-    def test_single_tool_call_returns_response(self, ai_generator, mock_anthropic_response_tool_use, mock_anthropic_response_text, mock_tool_manager):
+    def test_single_tool_call_returns_response(self, ai_generator, mock_anthropic_response_tool_use, mock_anthropic_response_text_with_citations, mock_tool_manager):
         """Single tool use followed by text should work"""
         generator, mock_client = ai_generator
 
         mock_client.messages.create.side_effect = [
             mock_anthropic_response_tool_use,
-            mock_anthropic_response_text
+            mock_anthropic_response_text_with_citations
         ]
 
         tools = [{"name": "search_course_content", "description": "Search"}]
@@ -131,7 +131,7 @@ class TestSequentialToolCalling:
             tool_manager=mock_tool_manager
         )
 
-        assert result == "This is a test response."
+        assert result == "This is a test response with citations [1]."
         assert mock_client.messages.create.call_count == 2
 
     def test_multiple_tool_calls_accumulate_messages(self, ai_generator, mock_tool_manager):
@@ -161,7 +161,7 @@ class TestSequentialToolCalling:
         text_response.stop_reason = "end_turn"
         text_block = Mock()
         text_block.type = "text"
-        text_block.text = "Comparison response."
+        text_block.text = "Comparison response [1] [4]."
         text_response.content = [text_block]
 
         mock_client.messages.create.side_effect = [
@@ -181,8 +181,8 @@ class TestSequentialToolCalling:
         assert mock_client.messages.create.call_count == 3
         # Tool manager should have been called twice
         assert mock_tool_manager.execute_tool.call_count == 2
-        # Final response should be returned
-        assert result == "Comparison response."
+        # Final response should be returned (with citations)
+        assert result == "Comparison response [1] [4]."
 
     def test_max_tool_calls_forces_response(self, ai_generator, mock_tool_manager):
         """Should force response after max calls reached"""
@@ -200,12 +200,12 @@ class TestSequentialToolCalling:
             response.content = [tool]
             return response
 
-        # Create text response for forced final
+        # Create text response for forced final (with citations)
         text_response = Mock()
         text_response.stop_reason = "end_turn"
         text_block = Mock()
         text_block.type = "text"
-        text_block.text = "Forced final response."
+        text_block.text = "Forced final response [1] [2]."
         text_response.content = [text_block]
 
         # 3 tool uses (hitting max) + 1 forced final (without tools)
@@ -227,7 +227,7 @@ class TestSequentialToolCalling:
         assert mock_client.messages.create.call_count == 4
         # Tool manager should have been called 3 times (max)
         assert mock_tool_manager.execute_tool.call_count == 3
-        assert result == "Forced final response."
+        assert result == "Forced final response [1] [2]."
 
     def test_no_tools_provided_returns_direct_response(self, ai_generator, mock_anthropic_response_text):
         """Without tools, should return direct response"""
@@ -259,12 +259,12 @@ class TestSequentialToolCalling:
             response.content = [tool]
             tool_responses.append(response)
 
-        # Final response (forced)
+        # Final response (with citations to avoid regeneration)
         text_response = Mock()
         text_response.stop_reason = "end_turn"
         text_block = Mock()
         text_block.type = "text"
-        text_block.text = "Final."
+        text_block.text = "Final response [1]."
         text_response.content = [text_block]
 
         mock_client.messages.create.side_effect = tool_responses + [text_response]
@@ -378,3 +378,55 @@ class TestHelperMethods:
         prompt = messages_sent[-1]["content"].lower()
         # Should remind about citations
         assert "cite" in prompt or "[1]" in prompt or "bracket" in prompt
+
+    def test_ensure_citations_returns_text_when_citations_present(self, ai_generator, mock_anthropic_response_text_with_citations):
+        """Should return text directly when citations are present"""
+        generator, mock_client = ai_generator
+
+        messages = [{"role": "user", "content": "test"}]
+        result = generator._ensure_citations_in_response(
+            mock_anthropic_response_text_with_citations,
+            messages,
+            "system prompt"
+        )
+
+        # Should return the original text without making additional API calls
+        assert result == "This is a test response with citations [1]."
+        mock_client.messages.create.assert_not_called()
+
+    def test_ensure_citations_regenerates_when_no_citations(self, ai_generator, mock_anthropic_response_text, mock_anthropic_response_text_with_citations):
+        """Should request regeneration when no citations in response"""
+        generator, mock_client = ai_generator
+
+        # Second call returns response with citations
+        mock_client.messages.create.return_value = mock_anthropic_response_text_with_citations
+
+        messages = [{"role": "user", "content": "test"}]
+        result = generator._ensure_citations_in_response(
+            mock_anthropic_response_text,  # No citations
+            messages,
+            "system prompt"
+        )
+
+        # Should have made API call requesting regeneration
+        mock_client.messages.create.assert_called_once()
+        # Should return the regenerated response with citations
+        assert result == "This is a test response with citations [1]."
+
+    def test_ensure_citations_includes_reminder_message(self, ai_generator, mock_anthropic_response_text, mock_anthropic_response_text_with_citations):
+        """Regeneration request should include citation reminder"""
+        generator, mock_client = ai_generator
+        mock_client.messages.create.return_value = mock_anthropic_response_text_with_citations
+
+        messages = [{"role": "user", "content": "test"}]
+        generator._ensure_citations_in_response(
+            mock_anthropic_response_text,
+            messages,
+            "system prompt"
+        )
+
+        call_args = mock_client.messages.create.call_args
+        messages_sent = call_args.kwargs["messages"]
+        # Should include reminder about citations
+        reminder = messages_sent[-1]["content"].lower()
+        assert "citation" in reminder or "bracket" in reminder or "[1]" in reminder

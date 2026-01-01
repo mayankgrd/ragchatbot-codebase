@@ -89,6 +89,18 @@ def mock_anthropic_response_text():
 
 
 @pytest.fixture
+def mock_anthropic_response_text_with_citations():
+    """Mock Anthropic response with text that includes citations"""
+    response = Mock()
+    response.stop_reason = "end_turn"
+    text_block = Mock()
+    text_block.type = "text"
+    text_block.text = "This is a test response with citations [1]."
+    response.content = [text_block]
+    return response
+
+
+@pytest.fixture
 def mock_anthropic_response_tool_use():
     """Mock Anthropic response with tool use"""
     response = Mock()

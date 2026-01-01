@@ -117,6 +117,11 @@ All responses must be:
 
             # Exit condition 1: Model returned text (no tool use)
             if response.stop_reason != "tool_use":
+                # If we made tool calls, ensure citations are included
+                if tool_call_count > 0:
+                    return self._ensure_citations_in_response(
+                        response, messages, system_content
+                    )
                 return self._extract_text_response(response)
 
             # Exit condition 2: Max tool calls reached
@@ -141,6 +146,62 @@ All responses must be:
             if hasattr(block, 'text'):
                 return block.text
         return ""
+
+    def _ensure_citations_in_response(
+        self,
+        response,
+        messages: List[Dict],
+        system_content: str
+    ) -> str:
+        """
+        Check if the response contains citations. If not, request regeneration
+        with an explicit reminder to cite sources.
+
+        This handles the case where Claude uses tools but doesn't include
+        citations in its final response (common in multi-tool comparison queries).
+
+        Args:
+            response: The API response to check
+            messages: Current message chain with tool results
+            system_content: System prompt content
+
+        Returns:
+            Response text with citations
+        """
+        import re
+
+        text = self._extract_text_response(response)
+
+        # Check if response contains citation patterns like [1], [2], etc.
+        has_citations = bool(re.search(r'\[\d+\]', text))
+
+        if has_citations:
+            return text
+
+        # No citations found - request regeneration with explicit reminder
+        # Build messages including the current response and a reminder
+        final_messages = messages.copy()
+
+        # Add the assistant's response that lacked citations
+        final_messages.append({
+            "role": "assistant",
+            "content": text
+        })
+
+        # Add reminder to include citations
+        final_messages.append({
+            "role": "user",
+            "content": "Please revise your response to include citations using bracket notation [1], [2], etc. to reference the search results. Each fact from the course materials should cite its source."
+        })
+
+        # Make API call without tools to get revised response
+        revised_response = self.client.messages.create(
+            **self.base_params,
+            messages=final_messages,
+            system=system_content
+        )
+
+        return self._extract_text_response(revised_response)
 
     def _execute_tools_and_update_messages(
         self,
