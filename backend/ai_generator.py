@@ -207,11 +207,11 @@ All responses must be:
         Returns:
             Final response text
         """
-        # Add instruction to generate final response
+        # Add instruction to generate final response with citation reminder
         final_messages = messages.copy()
         final_messages.append({
             "role": "user",
-            "content": "Based on the information gathered, please provide your final response."
+            "content": "Based on the search results above, please provide your final response. Remember to cite your sources using the bracket notation [1], [2], etc."
         })
 
         # Make API call without tools

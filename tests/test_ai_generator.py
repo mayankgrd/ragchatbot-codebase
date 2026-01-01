@@ -364,3 +364,17 @@ class TestHelperMethods:
         assert "final response" in messages_sent[-1]["content"].lower()
         # Check no tools were included
         assert "tools" not in call_args.kwargs
+
+    def test_force_final_response_includes_citation_reminder(self, ai_generator, mock_anthropic_response_text):
+        """Forced final response prompt should remind AI to cite sources"""
+        generator, mock_client = ai_generator
+        mock_client.messages.create.return_value = mock_anthropic_response_text
+
+        messages = [{"role": "user", "content": "test"}]
+        generator._force_final_response(messages, "system prompt")
+
+        call_args = mock_client.messages.create.call_args
+        messages_sent = call_args.kwargs["messages"]
+        prompt = messages_sent[-1]["content"].lower()
+        # Should remind about citations
+        assert "cite" in prompt or "[1]" in prompt or "bracket" in prompt
