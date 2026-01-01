@@ -5,7 +5,7 @@ const API_URL = '/api';
 let currentSessionId = null;
 
 // DOM elements
-let chatMessages, chatInput, sendButton, totalCourses, courseTitles;
+let chatMessages, chatInput, sendButton, totalCourses, courseTitles, themeToggle;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -15,8 +15,10 @@ document.addEventListener('DOMContentLoaded', () => {
     sendButton = document.getElementById('sendButton');
     totalCourses = document.getElementById('totalCourses');
     courseTitles = document.getElementById('courseTitles');
-    
+    themeToggle = document.getElementById('themeToggle');
+
     setupEventListeners();
+    loadThemePreference();
     createNewSession();
     loadCourseStats();
 });
@@ -28,8 +30,12 @@ function setupEventListeners() {
     chatInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
     });
-    
-    
+
+    // Theme toggle
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+
     // Suggested questions
     document.querySelectorAll('.suggested-item').forEach(button => {
         button.addEventListener('click', (e) => {
@@ -187,5 +193,23 @@ async function loadCourseStats() {
         if (courseTitles) {
             courseTitles.innerHTML = '<span class="error">Failed to load courses</span>';
         }
+    }
+}
+
+// Theme Toggle Functions
+function toggleTheme() {
+    const body = document.body;
+    const isLightMode = body.classList.toggle('light-mode');
+
+    // Save preference to localStorage
+    localStorage.setItem('theme', isLightMode ? 'light' : 'dark');
+}
+
+function loadThemePreference() {
+    const savedTheme = localStorage.getItem('theme');
+
+    // Apply saved theme or default to dark
+    if (savedTheme === 'light') {
+        document.body.classList.add('light-mode');
     }
 }
