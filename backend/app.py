@@ -115,5 +115,5 @@ class DevStaticFiles(StaticFiles):
         return response
     
     
-# Serve static files for the frontend
-app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")
+# Serve static files for the frontend with no-cache headers for development
+app.mount("/", DevStaticFiles(directory="../frontend", html=True), name="static")
