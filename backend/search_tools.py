@@ -19,10 +19,11 @@ class Tool(ABC):
 
 class CourseSearchTool(Tool):
     """Tool for searching course content with semantic course name matching"""
-    
+
     def __init__(self, vector_store: VectorStore):
         self.store = vector_store
-        self.last_sources = []  # Track sources from last search
+        self.all_sources = []      # Accumulated sources across searches
+        self._source_counter = 0   # Tracks next citation number for cumulative numbering
     
     def get_tool_definition(self) -> Dict[str, Any]:
         """Return Anthropic tool definition for this tool"""
@@ -86,11 +87,18 @@ class CourseSearchTool(Tool):
         return self._format_results(results)
     
     def _format_results(self, results: SearchResults) -> str:
-        """Format search results with numbered citations for AI to reference"""
-        formatted = []
-        sources = []  # Track sources for the UI
+        """Format search results with cumulative citation numbers for AI to reference.
 
-        for idx, (doc, meta) in enumerate(zip(results.documents, results.metadata), start=1):
+        Citation numbers accumulate across multiple tool calls within a query,
+        ensuring consistent numbering (e.g., first search: [1][2][3], second: [4][5][6]).
+        """
+        formatted = []
+
+        for doc, meta in zip(results.documents, results.metadata):
+            # Increment counter before using (cumulative across calls)
+            self._source_counter += 1
+            citation_num = self._source_counter
+
             course_title = meta.get('course_title', 'unknown')
             lesson_num = meta.get('lesson_number')
 
@@ -104,21 +112,23 @@ class CourseSearchTool(Tool):
             if lesson_num is not None:
                 lesson_link = self.store.get_lesson_link(course_title, lesson_num)
 
-            # Store with citation number for later filtering
-            sources.append({
-                "citation_num": idx,
+            # Accumulate source with cumulative citation number
+            self.all_sources.append({
+                "citation_num": citation_num,
                 "title": source_title,
                 "url": lesson_link
             })
 
-            # Format with numbered reference for AI to cite
-            header = f"[{idx}] {source_title}"
+            # Format with cumulative numbered reference for AI to cite
+            header = f"[{citation_num}] {source_title}"
             formatted.append(f"{header}\n{doc}")
 
-        # Store sources for retrieval
-        self.last_sources = sources
-
         return "\n\n".join(formatted)
+
+    def reset_sources(self):
+        """Reset accumulated sources and counter for new query."""
+        self.all_sources = []
+        self._source_counter = 0
 
 
 class CourseOutlineTool(Tool):
@@ -212,16 +222,22 @@ class ToolManager:
         
         return self.tools[tool_name].execute(**kwargs)
     
-    def get_last_sources(self) -> list:
-        """Get sources from the last search operation"""
-        # Check all tools for last_sources attribute
+    def get_all_sources(self) -> list:
+        """Get accumulated sources from all search operations.
+
+        Sources accumulate across multiple tool calls within a query,
+        with cumulative citation numbering.
+        """
+        all_sources = []
         for tool in self.tools.values():
-            if hasattr(tool, 'last_sources') and tool.last_sources:
-                return tool.last_sources
-        return []
+            if hasattr(tool, 'all_sources'):
+                all_sources.extend(tool.all_sources)
+        return all_sources
 
     def reset_sources(self):
-        """Reset sources from all tools that track sources"""
+        """Reset sources and counters from all tools that track sources."""
         for tool in self.tools.values():
-            if hasattr(tool, 'last_sources'):
-                tool.last_sources = []
+            if hasattr(tool, 'reset_sources'):
+                tool.reset_sources()
+            elif hasattr(tool, 'all_sources'):
+                tool.all_sources = []

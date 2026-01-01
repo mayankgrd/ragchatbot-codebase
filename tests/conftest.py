@@ -113,5 +113,66 @@ def mock_tool_manager():
         {"name": "search_course_content", "description": "Search course content"},
         {"name": "get_course_outline", "description": "Get course outline"}
     ]
-    manager.get_last_sources.return_value = []
+    manager.get_all_sources.return_value = []
+    manager.reset_sources.return_value = None
     return manager
+
+
+@pytest.fixture
+def mock_anthropic_response_tool_use_mcp():
+    """Mock Anthropic response with tool use for MCP search"""
+    response = Mock()
+    response.stop_reason = "tool_use"
+
+    tool_block = Mock()
+    tool_block.type = "tool_use"
+    tool_block.id = "tool_mcp_123"
+    tool_block.name = "search_course_content"
+    tool_block.input = {"query": "MCP protocol", "course_name": "MCP"}
+
+    response.content = [tool_block]
+    return response
+
+
+@pytest.fixture
+def mock_anthropic_response_tool_use_chroma():
+    """Mock Anthropic response with tool use for Chroma search"""
+    response = Mock()
+    response.stop_reason = "tool_use"
+
+    tool_block = Mock()
+    tool_block.type = "tool_use"
+    tool_block.id = "tool_chroma_456"
+    tool_block.name = "search_course_content"
+    tool_block.input = {"query": "Chroma retrieval", "course_name": "Chroma"}
+
+    response.content = [tool_block]
+    return response
+
+
+def create_mock_tool_response(tool_name: str, tool_input: dict, tool_id: str = "tool_123"):
+    """Helper to create mock tool use responses"""
+    response = Mock()
+    response.stop_reason = "tool_use"
+
+    tool_block = Mock()
+    tool_block.type = "tool_use"
+    tool_block.id = tool_id
+    tool_block.name = tool_name
+    tool_block.input = tool_input
+
+    response.content = [tool_block]
+    return response
+
+
+def create_mock_text_response(text: str):
+    """Helper to create mock text responses"""
+    response = Mock()
+    response.stop_reason = "end_turn"
+
+    text_block = Mock()
+    text_block.type = "text"
+    text_block.text = text
+
+    response.content = [text_block]
+    return response

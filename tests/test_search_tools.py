@@ -78,14 +78,57 @@ class TestCourseSearchTool:
         assert "[1]" in result
         assert "[2]" in result
 
-    def test_last_sources_tracked(self, mock_vector_store):
-        """Sources should be tracked after execution"""
+    def test_sources_accumulated_after_execution(self, mock_vector_store):
+        """Sources should be accumulated after execution"""
         tool = CourseSearchTool(mock_vector_store)
         tool.execute(query="test")
 
-        assert len(tool.last_sources) == 2
-        assert tool.last_sources[0]["citation_num"] == 1
-        assert tool.last_sources[1]["citation_num"] == 2
+        assert len(tool.all_sources) == 2
+        assert tool.all_sources[0]["citation_num"] == 1
+        assert tool.all_sources[1]["citation_num"] == 2
+
+    def test_cumulative_citation_numbering(self, mock_vector_store, sample_search_results):
+        """Citation numbers should accumulate across multiple searches"""
+        tool = CourseSearchTool(mock_vector_store)
+
+        # First search: should get citations [1], [2]
+        result1 = tool.execute(query="first query")
+        assert "[1]" in result1
+        assert "[2]" in result1
+        assert len(tool.all_sources) == 2
+        assert tool._source_counter == 2
+
+        # Second search: should get citations [3], [4]
+        result2 = tool.execute(query="second query")
+        assert "[3]" in result2
+        assert "[4]" in result2
+        assert len(tool.all_sources) == 4
+        assert tool._source_counter == 4
+
+        # Verify all sources accumulated correctly
+        assert tool.all_sources[0]["citation_num"] == 1
+        assert tool.all_sources[1]["citation_num"] == 2
+        assert tool.all_sources[2]["citation_num"] == 3
+        assert tool.all_sources[3]["citation_num"] == 4
+
+    def test_reset_sources_clears_counter(self, mock_vector_store):
+        """reset_sources should clear both sources and counter"""
+        tool = CourseSearchTool(mock_vector_store)
+
+        # Execute to populate sources and counter
+        tool.execute(query="test")
+        assert len(tool.all_sources) == 2
+        assert tool._source_counter == 2
+
+        # Reset
+        tool.reset_sources()
+        assert len(tool.all_sources) == 0
+        assert tool._source_counter == 0
+
+        # Next search should start from [1] again
+        result = tool.execute(query="new query")
+        assert "[1]" in result
+        assert tool._source_counter == 2
 
 
 class TestCourseOutlineTool:
@@ -192,19 +235,37 @@ class TestToolManager:
 
         assert "Tool 'unknown_tool' not found" in result
 
-    def test_get_last_sources(self, mock_vector_store):
-        """ToolManager should return sources from last search"""
+    def test_get_all_sources(self, mock_vector_store):
+        """ToolManager should return accumulated sources from all searches"""
         manager = ToolManager()
         tool = CourseSearchTool(mock_vector_store)
         manager.register_tool(tool)
 
         manager.execute_tool("search_course_content", query="test")
-        sources = manager.get_last_sources()
+        sources = manager.get_all_sources()
 
         assert len(sources) == 2
 
+    def test_get_all_sources_accumulates_across_calls(self, mock_vector_store):
+        """ToolManager should accumulate sources across multiple tool calls"""
+        manager = ToolManager()
+        tool = CourseSearchTool(mock_vector_store)
+        manager.register_tool(tool)
+
+        # First call
+        manager.execute_tool("search_course_content", query="first")
+        # Second call
+        manager.execute_tool("search_course_content", query="second")
+
+        sources = manager.get_all_sources()
+        # Should have 4 sources (2 from each call)
+        assert len(sources) == 4
+        # Citations should be cumulative: 1, 2, 3, 4
+        citation_nums = [s["citation_num"] for s in sources]
+        assert citation_nums == [1, 2, 3, 4]
+
     def test_reset_sources(self, mock_vector_store):
-        """ToolManager should reset sources from all tools"""
+        """ToolManager should reset sources and counters from all tools"""
         manager = ToolManager()
         tool = CourseSearchTool(mock_vector_store)
         manager.register_tool(tool)
@@ -212,4 +273,5 @@ class TestToolManager:
         manager.execute_tool("search_course_content", query="test")
         manager.reset_sources()
 
-        assert tool.last_sources == []
+        assert tool.all_sources == []
+        assert tool._source_counter == 0
