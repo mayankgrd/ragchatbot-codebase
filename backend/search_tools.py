@@ -19,10 +19,11 @@ class Tool(ABC):
 
 class CourseSearchTool(Tool):
     """Tool for searching course content with semantic course name matching"""
-    
+
     def __init__(self, vector_store: VectorStore):
         self.store = vector_store
-        self.last_sources = []  # Track sources from last search
+        self.all_sources = []      # Accumulated sources across searches
+        self._source_counter = 0   # Tracks next citation number for cumulative numbering
     
     def get_tool_definition(self) -> Dict[str, Any]:
         """Return Anthropic tool definition for this tool"""
@@ -86,32 +87,114 @@ class CourseSearchTool(Tool):
         return self._format_results(results)
     
     def _format_results(self, results: SearchResults) -> str:
-        """Format search results with course and lesson context"""
+        """Format search results with cumulative citation numbers for AI to reference.
+
+        Citation numbers accumulate across multiple tool calls within a query,
+        ensuring consistent numbering (e.g., first search: [1][2][3], second: [4][5][6]).
+        """
         formatted = []
-        sources = []  # Track sources for the UI
-        
+
         for doc, meta in zip(results.documents, results.metadata):
+            # Increment counter before using (cumulative across calls)
+            self._source_counter += 1
+            citation_num = self._source_counter
+
             course_title = meta.get('course_title', 'unknown')
             lesson_num = meta.get('lesson_number')
-            
-            # Build context header
-            header = f"[{course_title}"
+
+            # Build source title
+            source_title = course_title
             if lesson_num is not None:
-                header += f" - Lesson {lesson_num}"
-            header += "]"
-            
-            # Track source for the UI
-            source = course_title
+                source_title += f" - Lesson {lesson_num}"
+
+            # Get lesson link from vector store
+            lesson_link = None
             if lesson_num is not None:
-                source += f" - Lesson {lesson_num}"
-            sources.append(source)
-            
+                lesson_link = self.store.get_lesson_link(course_title, lesson_num)
+
+            # Accumulate source with cumulative citation number
+            self.all_sources.append({
+                "citation_num": citation_num,
+                "title": source_title,
+                "url": lesson_link
+            })
+
+            # Format with cumulative numbered reference for AI to cite
+            header = f"[{citation_num}] {source_title}"
             formatted.append(f"{header}\n{doc}")
-        
-        # Store sources for retrieval
-        self.last_sources = sources
-        
+
         return "\n\n".join(formatted)
+
+    def reset_sources(self):
+        """Reset accumulated sources and counter for new query."""
+        self.all_sources = []
+        self._source_counter = 0
+
+
+class CourseOutlineTool(Tool):
+    """Tool for retrieving course structure and lesson list"""
+
+    def __init__(self, vector_store: VectorStore):
+        self.store = vector_store
+
+    def get_tool_definition(self) -> Dict[str, Any]:
+        """Return Anthropic tool definition for this tool"""
+        return {
+            "name": "get_course_outline",
+            "description": "Get course structure including title, link, instructor, and complete lesson list with links. Use for questions about course syllabus, what topics a course covers, or listing lessons.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "course_title": {
+                        "type": "string",
+                        "description": "Course title to look up (partial matches work, e.g. 'MCP', 'Introduction')"
+                    }
+                },
+                "required": ["course_title"]
+            }
+        }
+
+    def execute(self, course_title: str) -> str:
+        """
+        Execute the outline tool to get course structure.
+
+        Args:
+            course_title: Course name to look up
+
+        Returns:
+            Formatted course outline or error message
+        """
+        metadata = self.store.get_course_metadata(course_title)
+
+        if not metadata:
+            return f"No course found matching '{course_title}'"
+
+        return self._format_outline(metadata)
+
+    def _format_outline(self, metadata: Dict[str, Any]) -> str:
+        """Format course metadata as readable outline"""
+        lines = [
+            f"Course: {metadata.get('title', 'Unknown')}",
+            f"Instructor: {metadata.get('instructor', 'Unknown')}",
+            f"Course Link: {metadata.get('course_link', 'N/A')}",
+            f"Total Lessons: {metadata.get('lesson_count', 0)}",
+            "",
+            "Lessons:"
+        ]
+
+        lessons = metadata.get('lessons', [])
+        for lesson in lessons:
+            lesson_num = lesson.get('lesson_number', '?')
+            lesson_title = lesson.get('lesson_title', 'Untitled')
+            lesson_link = lesson.get('lesson_link', '')
+
+            if lesson_link:
+                lines.append(f"  {lesson_num}. {lesson_title} - {lesson_link}")
+            else:
+                lines.append(f"  {lesson_num}. {lesson_title}")
+
+        return "\n".join(lines)
+
 
 class ToolManager:
     """Manages available tools for the AI"""
@@ -139,16 +222,22 @@ class ToolManager:
         
         return self.tools[tool_name].execute(**kwargs)
     
-    def get_last_sources(self) -> list:
-        """Get sources from the last search operation"""
-        # Check all tools for last_sources attribute
+    def get_all_sources(self) -> list:
+        """Get accumulated sources from all search operations.
+
+        Sources accumulate across multiple tool calls within a query,
+        with cumulative citation numbering.
+        """
+        all_sources = []
         for tool in self.tools.values():
-            if hasattr(tool, 'last_sources') and tool.last_sources:
-                return tool.last_sources
-        return []
+            if hasattr(tool, 'all_sources'):
+                all_sources.extend(tool.all_sources)
+        return all_sources
 
     def reset_sources(self):
-        """Reset sources from all tools that track sources"""
+        """Reset sources and counters from all tools that track sources."""
         for tool in self.tools.values():
-            if hasattr(tool, 'last_sources'):
-                tool.last_sources = []
+            if hasattr(tool, 'reset_sources'):
+                tool.reset_sources()
+            elif hasattr(tool, 'all_sources'):
+                tool.all_sources = []

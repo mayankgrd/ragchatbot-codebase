@@ -1,10 +1,11 @@
 from typing import List, Tuple, Optional, Dict
 import os
+import re
 from document_processor import DocumentProcessor
 from vector_store import VectorStore
 from ai_generator import AIGenerator
 from session_manager import SessionManager
-from search_tools import ToolManager, CourseSearchTool
+from search_tools import ToolManager, CourseSearchTool, CourseOutlineTool
 from models import Course, Lesson, CourseChunk
 
 class RAGSystem:
@@ -22,7 +23,9 @@ class RAGSystem:
         # Initialize search tools
         self.tool_manager = ToolManager()
         self.search_tool = CourseSearchTool(self.vector_store)
+        self.outline_tool = CourseOutlineTool(self.vector_store)
         self.tool_manager.register_tool(self.search_tool)
+        self.tool_manager.register_tool(self.outline_tool)
     
     def add_course_document(self, file_path: str) -> Tuple[Course, int]:
         """
@@ -99,25 +102,74 @@ class RAGSystem:
         
         return total_courses, total_chunks
     
+    def _extract_cited_sources(self, response: str, all_sources: list) -> Tuple[str, list]:
+        """
+        Extract only the sources that were actually cited in the response,
+        renumber them sequentially, and update the response text accordingly.
+
+        Args:
+            response: The AI-generated response text
+            all_sources: List of all sources from search results
+
+        Returns:
+            Tuple of (updated response with renumbered citations, list of renumbered sources)
+        """
+        if not all_sources:
+            return response, []
+
+        # Find all citation numbers like [1], [2], [3] in the response
+        cited_nums = sorted(set(int(m) for m in re.findall(r'\[(\d+)\]', response)))
+
+        if not cited_nums:
+            return response, []
+
+        # Create mapping from old citation numbers to new sequential numbers
+        old_to_new = {old_num: new_num for new_num, old_num in enumerate(cited_nums, start=1)}
+
+        # Update citation numbers in the response text
+        updated_response = response
+        for old_num, new_num in old_to_new.items():
+            # Replace [old_num] with a temporary placeholder to avoid conflicts
+            updated_response = re.sub(rf'\[{old_num}\]', f'[[CITE_{new_num}]]', updated_response)
+
+        # Replace placeholders with final citation numbers
+        updated_response = re.sub(r'\[\[CITE_(\d+)\]\]', r'[\1]', updated_response)
+
+        # Build renumbered sources list
+        cited_sources = []
+        for source in all_sources:
+            old_num = source.get("citation_num")
+            if old_num in old_to_new:
+                cited_sources.append({
+                    "citation_num": old_to_new[old_num],
+                    "title": source["title"],
+                    "url": source["url"]
+                })
+
+        # Sort by new citation number
+        cited_sources.sort(key=lambda x: x["citation_num"])
+
+        return updated_response, cited_sources
+
     def query(self, query: str, session_id: Optional[str] = None) -> Tuple[str, List[str]]:
         """
         Process a user query using the RAG system with tool-based search.
-        
+
         Args:
             query: User's question
             session_id: Optional session ID for conversation context
-            
+
         Returns:
-            Tuple of (response, sources list - empty for tool-based approach)
+            Tuple of (response, sources list - only includes actually cited sources)
         """
         # Create prompt for the AI with clear instructions
         prompt = f"""Answer this question about course materials: {query}"""
-        
+
         # Get conversation history if session exists
         history = None
         if session_id:
             history = self.session_manager.get_conversation_history(session_id)
-        
+
         # Generate response using AI with tools
         response = self.ai_generator.generate_response(
             query=prompt,
@@ -125,19 +177,22 @@ class RAGSystem:
             tools=self.tool_manager.get_tool_definitions(),
             tool_manager=self.tool_manager
         )
-        
-        # Get sources from the search tool
-        sources = self.tool_manager.get_last_sources()
+
+        # Get all accumulated sources from the search tool(s)
+        all_sources = self.tool_manager.get_all_sources()
 
         # Reset sources after retrieving them
         self.tool_manager.reset_sources()
-        
+
+        # Filter to only cited sources and renumber them sequentially
+        response, cited_sources = self._extract_cited_sources(response, all_sources)
+
         # Update conversation history
         if session_id:
             self.session_manager.add_exchange(session_id, query, response)
-        
-        # Return response with sources from tool searches
-        return response, sources
+
+        # Return response with renumbered citations and sources
+        return response, cited_sources
     
     def get_course_analytics(self) -> Dict:
         """Get analytics about the course catalog"""
